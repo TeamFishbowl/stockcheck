@@ -164,7 +164,7 @@ class StockMonitor:
         try:
             # Setup Chrome options
             chrome_options = Options()
-            chrome_options.add_argument('--headless')  # Run in background
+            chrome_options.add_argument('--headless')
             chrome_options.add_argument('--no-sandbox')
             chrome_options.add_argument('--disable-dev-shm-usage')
             chrome_options.add_argument('--disable-gpu')
@@ -174,8 +174,20 @@ class StockMonitor:
             chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
             chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            # Initialize driver
-            driver = webdriver.Chrome(options=chrome_options)
+            # Get the directory where this script is located
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            chromedriver_path = os.path.join(script_dir, 'chromedriver.exe')
+            
+            # Check if chromedriver exists in script directory
+            if os.path.exists(chromedriver_path):
+                print(f"Using ChromeDriver at: {chromedriver_path}")
+                service = Service(chromedriver_path)
+                driver = webdriver.Chrome(service=service, options=chrome_options)
+            else:
+                # Try without explicit path (will search in PATH/system32)
+                print("ChromeDriver not found in script directory, trying system PATH...")
+                driver = webdriver.Chrome(options=chrome_options)
+            
             driver.set_page_load_timeout(30)
             
             # Load the page
@@ -228,9 +240,10 @@ class StockMonitor:
         except TimeoutException:
             return 'error: Page load timeout'
         except WebDriverException as e:
-            if 'chrome' in str(e).lower() or 'chromedriver' in str(e).lower():
-                return 'error: ChromeDriver not found - Install Chrome'
-            return f'error: Browser error - {str(e)[:40]}'
+            error_msg = str(e).lower()
+            if 'chrome' in error_msg or 'chromedriver' in error_msg:
+                return f'error: ChromeDriver issue - Check installation and version match Chrome browser'
+            return f'error: Browser error - {str(e)[:60]}'
         except Exception as e:
             return f'error: {str(e)[:50]}'
         finally:
@@ -250,7 +263,7 @@ class StockMonitor:
             
             if tab_index in self.last_email_sent:
                 if current_time - self.last_email_sent[tab_index] < email_interval:
-                    return  # Don't send email yet
+                    return
                     
             msg = MIMEMultipart()
             msg['From'] = self.config['email_from']
