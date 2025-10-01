@@ -10,6 +10,8 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
+import urllib3
+urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 
 class StockMonitor:
     def __init__(self, root):
@@ -158,19 +160,33 @@ class StockMonitor:
         try:
             headers = {
                 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+                'Accept-Language': 'en-AU,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
                 'Accept-Encoding': 'gzip, deflate, br',
                 'Connection': 'keep-alive',
                 'Upgrade-Insecure-Requests': '1',
                 'Sec-Fetch-Dest': 'document',
                 'Sec-Fetch-Mode': 'navigate',
                 'Sec-Fetch-Site': 'none',
-                'Cache-Control': 'max-age=0'
+                'Sec-Fetch-User': '?1',
+                'Cache-Control': 'max-age=0',
+                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"Windows"',
+                'Referer': 'https://www.google.com/'
             }
             
             session = requests.Session()
-            response = session.get(url, headers=headers, timeout=15, verify=True)
+            session.max_redirects = 10
+            
+            # Try with verify=False first (ignores SSL certificate issues)
+            try:
+                response = session.get(url, headers=headers, timeout=20, verify=False, allow_redirects=True)
+            except:
+                # If that fails, try with verify=True
+                time.sleep(2)
+                response = session.get(url, headers=headers, timeout=20, verify=True, allow_redirects=True)
+            
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -210,13 +226,16 @@ class StockMonitor:
                 return 'unknown'
                 
         except requests.exceptions.SSLError as e:
-            return 'error: SSL/Connection issue (site may be blocking requests)'
+            return 'error: SSL blocked - Try increasing interval to 180+ sec'
         except requests.exceptions.ConnectionError as e:
-            return 'error: Connection failed (check internet or try again)'
+            return 'error: Connection failed - Site may be blocking'
         except requests.exceptions.Timeout as e:
-            return 'error: Request timed out'
+            return 'error: Timeout - Try increasing interval'
+        except requests.exceptions.TooManyRedirects as e:
+            return 'error: Too many redirects'
         except Exception as e:
-            return f'error: {str(e)[:50]}'
+            error_msg = str(e)[:60]
+            return f'error: {error_msg}'
             
     def send_email_alert(self, tab_index, url):
         """Send email alert when product comes in stock"""
