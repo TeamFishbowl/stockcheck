@@ -4,7 +4,7 @@ init:
   - cmd: set PATH=C:\Python310;C:\Python310\Scripts;%PATH%
 
 build_script:
-  - cmd: pip install requests beautifulsoup4 pyinstaller
+  - cmd: pip install selenium pyinstaller
   - cmd: pyinstaller --onefile --noconsole stock_monitor.py
 
 artifacts:
