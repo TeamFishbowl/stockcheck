@@ -157,24 +157,66 @@ class StockMonitor:
         """Check if product is in stock"""
         try:
             headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+                'Accept-Language': 'en-US,en;q=0.5',
+                'Accept-Encoding': 'gzip, deflate, br',
+                'Connection': 'keep-alive',
+                'Upgrade-Insecure-Requests': '1',
+                'Sec-Fetch-Dest': 'document',
+                'Sec-Fetch-Mode': 'navigate',
+                'Sec-Fetch-Site': 'none',
+                'Cache-Control': 'max-age=0'
             }
-            response = requests.get(url, headers=headers, timeout=10)
+            
+            session = requests.Session()
+            response = session.get(url, headers=headers, timeout=15, verify=True)
             response.raise_for_status()
             
             soup = BeautifulSoup(response.text, 'html.parser')
-            page_text = soup.get_text().lower()
             
-            # Check for stock status
-            if 'add to cart' in page_text:
+            # Look for buttons/elements specifically (more accurate than full page text)
+            buttons = soup.find_all(['button', 'a', 'input', 'span', 'div'], 
+                                   string=lambda text: text and ('add to cart' in text.lower() or 
+                                                                'add to wishlist' in text.lower()))
+            
+            # Also check common attributes
+            cart_elements = soup.find_all(attrs={'class': lambda x: x and 'cart' in str(x).lower()})
+            wishlist_elements = soup.find_all(attrs={'class': lambda x: x and 'wishlist' in str(x).lower()})
+            
+            # Check button text content
+            has_add_to_cart = False
+            has_add_to_wishlist = False
+            
+            for btn in buttons:
+                btn_text = btn.get_text().lower().strip()
+                if 'add to cart' in btn_text:
+                    has_add_to_cart = True
+                if 'add to wishlist' in btn_text:
+                    has_add_to_wishlist = True
+            
+            # Fallback: check entire page if buttons not found
+            if not has_add_to_cart and not has_add_to_wishlist:
+                page_text = soup.get_text().lower()
+                has_add_to_cart = 'add to cart' in page_text
+                has_add_to_wishlist = 'add to wishlist' in page_text
+            
+            # Determine stock status (prioritize "add to cart")
+            if has_add_to_cart:
                 return 'in_stock'
-            elif 'add to wishlist' in page_text:
+            elif has_add_to_wishlist:
                 return 'out_of_stock'
             else:
                 return 'unknown'
                 
+        except requests.exceptions.SSLError as e:
+            return 'error: SSL/Connection issue (site may be blocking requests)'
+        except requests.exceptions.ConnectionError as e:
+            return 'error: Connection failed (check internet or try again)'
+        except requests.exceptions.Timeout as e:
+            return 'error: Request timed out'
         except Exception as e:
-            return f'error: {str(e)}'
+            return f'error: {str(e)[:50]}'
             
     def send_email_alert(self, tab_index, url):
         """Send email alert when product comes in stock"""
