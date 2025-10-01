@@ -288,16 +288,20 @@ class StockMonitor:
             pass
     
     def show_refresh_indicator(self, tab_index, show=True):
-        """Show or hide the refresh indicator"""
-        try:
-            if show:
-                self.refresh_labels[tab_index].config(text="🔄 Refreshing...")
-                self.refresh_labels[tab_index].pack(fill="x", padx=10, pady=(5, 0))
-            else:
-                self.refresh_labels[tab_index].config(text="")
-                self.refresh_labels[tab_index].pack_forget()
-        except:
-            pass
+        """Show or hide the refresh indicator - must be called from main thread"""
+        def update():
+            try:
+                if show:
+                    self.refresh_labels[tab_index].config(text="🔄 Refreshing...")
+                    self.refresh_labels[tab_index].pack(fill="x", padx=10, pady=(5, 0))
+                else:
+                    self.refresh_labels[tab_index].config(text="")
+                    self.refresh_labels[tab_index].pack_forget()
+            except:
+                pass
+        
+        # Schedule the update on the main thread
+        self.root.after(0, update)
         """Send email alert when product comes in stock"""
         try:
             # Check if we should send email based on interval
@@ -351,28 +355,33 @@ class StockMonitor:
             # Hide refresh indicator
             self.show_refresh_indicator(tab_index, False)
             
-            # Update UI
-            if status == 'in_stock':
-                self.status_labels[tab_index].config(text="IN STOCK - Add to Cart Available!", 
-                                                     bg="green", fg="white")
-                # Update tab with green indicator
-                self.notebook.tab(tab_index, text=f"🟢 Monitor {tab_index + 1}")
-                
-                # Send email if status changed
-                if self.last_status.get(tab_index) != 'in_stock':
-                    threading.Thread(target=self.send_email_alert, args=(tab_index, url), daemon=True).start()
-                    
-            elif status == 'out_of_stock':
-                self.status_labels[tab_index].config(text="OUT OF STOCK - Add to Wishlist Only", 
-                                                     bg="red", fg="white")
-                # Update tab with red indicator
-                self.notebook.tab(tab_index, text=f"🔴 Monitor {tab_index + 1}")
-            else:
-                self.status_labels[tab_index].config(text=f"Status: {status}", 
-                                                     bg="orange", fg="white")
-                # Update tab with orange indicator for errors/unknown
-                self.notebook.tab(tab_index, text=f"🟠 Monitor {tab_index + 1}")
+            # Update UI - use root.after to ensure main thread updates
+            def update_ui():
+                try:
+                    if status == 'in_stock':
+                        self.status_labels[tab_index].config(text="IN STOCK - Add to Cart Available!", 
+                                                             bg="green", fg="white")
+                        # Update tab with green indicator - using text symbols instead of emoji
+                        self.notebook.tab(tab_index, text=f"✓ [IN STOCK] Monitor {tab_index + 1}")
+                        
+                        # Send email if status changed
+                        if self.last_status.get(tab_index) != 'in_stock':
+                            threading.Thread(target=self.send_email_alert, args=(tab_index, url), daemon=True).start()
+                            
+                    elif status == 'out_of_stock':
+                        self.status_labels[tab_index].config(text="OUT OF STOCK - Add to Wishlist Only", 
+                                                             bg="red", fg="white")
+                        # Update tab with red indicator
+                        self.notebook.tab(tab_index, text=f"✗ [OUT] Monitor {tab_index + 1}")
+                    else:
+                        self.status_labels[tab_index].config(text=f"Status: {status}", 
+                                                             bg="orange", fg="white")
+                        # Update tab with warning indicator for errors/unknown
+                        self.notebook.tab(tab_index, text=f"⚠ [ERROR] Monitor {tab_index + 1}")
+                except:
+                    pass
                                                      
+            self.root.after(0, update_ui)
             self.last_status[tab_index] = status
             
             time.sleep(interval)
