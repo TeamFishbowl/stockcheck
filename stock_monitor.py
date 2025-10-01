@@ -2,16 +2,19 @@ import tkinter as tk
 from tkinter import ttk, messagebox
 import threading
 import time
-import requests
-from bs4 import BeautifulSoup
 import json
 import smtplib
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
-import urllib3
-urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+from selenium import webdriver
+from selenium.webdriver.chrome.service import Service
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from selenium.webdriver.support.ui import WebDriverWait
+from selenium.webdriver.support import expected_conditions as EC
+from selenium.common.exceptions import TimeoutException, WebDriverException
 
 class StockMonitor:
     def __init__(self, root):
@@ -156,66 +159,63 @@ class StockMonitor:
             messagebox.showerror("Error", "Invalid interval value. Please enter numbers only.")
             
     def check_stock(self, url):
-        """Check if product is in stock"""
+        """Check if product is in stock using Selenium"""
+        driver = None
         try:
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'en-AU,en-GB;q=0.9,en-US;q=0.8,en;q=0.7',
-                'Accept-Encoding': 'gzip, deflate, br',
-                'Connection': 'keep-alive',
-                'Upgrade-Insecure-Requests': '1',
-                'Sec-Fetch-Dest': 'document',
-                'Sec-Fetch-Mode': 'navigate',
-                'Sec-Fetch-Site': 'none',
-                'Sec-Fetch-User': '?1',
-                'Cache-Control': 'max-age=0',
-                'sec-ch-ua': '"Not_A Brand";v="8", "Chromium";v="120", "Google Chrome";v="120"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"Windows"',
-                'Referer': 'https://www.google.com/'
-            }
+            # Setup Chrome options
+            chrome_options = Options()
+            chrome_options.add_argument('--headless')  # Run in background
+            chrome_options.add_argument('--no-sandbox')
+            chrome_options.add_argument('--disable-dev-shm-usage')
+            chrome_options.add_argument('--disable-gpu')
+            chrome_options.add_argument('--window-size=1920,1080')
+            chrome_options.add_argument('--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36')
+            chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+            chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+            chrome_options.add_experimental_option('useAutomationExtension', False)
             
-            session = requests.Session()
-            session.max_redirects = 10
+            # Initialize driver
+            driver = webdriver.Chrome(options=chrome_options)
+            driver.set_page_load_timeout(30)
             
-            # Try with verify=False first (ignores SSL certificate issues)
-            try:
-                response = session.get(url, headers=headers, timeout=20, verify=False, allow_redirects=True)
-            except:
-                # If that fails, try with verify=True
-                time.sleep(2)
-                response = session.get(url, headers=headers, timeout=20, verify=True, allow_redirects=True)
+            # Load the page
+            driver.get(url)
             
-            response.raise_for_status()
+            # Wait for page to load (wait for body element)
+            WebDriverWait(driver, 15).until(
+                EC.presence_of_element_located((By.TAG_NAME, "body"))
+            )
             
-            soup = BeautifulSoup(response.text, 'html.parser')
+            # Give extra time for dynamic content to load
+            time.sleep(3)
             
-            # Look for buttons/elements specifically (more accurate than full page text)
-            buttons = soup.find_all(['button', 'a', 'input', 'span', 'div'], 
-                                   string=lambda text: text and ('add to cart' in text.lower() or 
-                                                                'add to wishlist' in text.lower()))
+            # Get page source after JavaScript execution
+            page_source = driver.page_source.lower()
             
-            # Also check common attributes
-            cart_elements = soup.find_all(attrs={'class': lambda x: x and 'cart' in str(x).lower()})
-            wishlist_elements = soup.find_all(attrs={'class': lambda x: x and 'wishlist' in str(x).lower()})
-            
-            # Check button text content
+            # Also try to find buttons/elements
             has_add_to_cart = False
             has_add_to_wishlist = False
             
-            for btn in buttons:
-                btn_text = btn.get_text().lower().strip()
-                if 'add to cart' in btn_text:
+            try:
+                # Search for elements containing "add to cart"
+                elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to cart')]")
+                if elements:
                     has_add_to_cart = True
-                if 'add to wishlist' in btn_text:
-                    has_add_to_wishlist = True
+            except:
+                pass
             
-            # Fallback: check entire page if buttons not found
+            try:
+                # Search for elements containing "add to wishlist"
+                elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to wishlist')]")
+                if elements:
+                    has_add_to_wishlist = True
+            except:
+                pass
+            
+            # Fallback to page source search
             if not has_add_to_cart and not has_add_to_wishlist:
-                page_text = soup.get_text().lower()
-                has_add_to_cart = 'add to cart' in page_text
-                has_add_to_wishlist = 'add to wishlist' in page_text
+                has_add_to_cart = 'add to cart' in page_source
+                has_add_to_wishlist = 'add to wishlist' in page_source
             
             # Determine stock status (prioritize "add to cart")
             if has_add_to_cart:
@@ -225,17 +225,21 @@ class StockMonitor:
             else:
                 return 'unknown'
                 
-        except requests.exceptions.SSLError as e:
-            return 'error: SSL blocked - Try increasing interval to 180+ sec'
-        except requests.exceptions.ConnectionError as e:
-            return 'error: Connection failed - Site may be blocking'
-        except requests.exceptions.Timeout as e:
-            return 'error: Timeout - Try increasing interval'
-        except requests.exceptions.TooManyRedirects as e:
-            return 'error: Too many redirects'
+        except TimeoutException:
+            return 'error: Page load timeout'
+        except WebDriverException as e:
+            if 'chrome' in str(e).lower() or 'chromedriver' in str(e).lower():
+                return 'error: ChromeDriver not found - Install Chrome'
+            return f'error: Browser error - {str(e)[:40]}'
         except Exception as e:
-            error_msg = str(e)[:60]
-            return f'error: {error_msg}'
+            return f'error: {str(e)[:50]}'
+        finally:
+            # Always close the driver
+            if driver:
+                try:
+                    driver.quit()
+                except:
+                    pass
             
     def send_email_alert(self, tab_index, url):
         """Send email alert when product comes in stock"""
