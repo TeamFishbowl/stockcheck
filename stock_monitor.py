@@ -26,6 +26,7 @@ class StockMonitor:
         self.monitoring_threads = {}
         self.last_status = {}
         self.last_email_sent = {}
+        self.refresh_labels = []
         
         self.load_config()
         self.create_ui()
@@ -100,6 +101,17 @@ class StockMonitor:
         frame = ttk.Frame(self.notebook)
         self.notebook.add(frame, text=f"Monitor {index + 1}")
         self.tab_frames.append(frame)
+        
+        # Refresh Indicator Label
+        refresh_label = tk.Label(frame, text="", font=("Arial", 9, "italic"), 
+                                fg="blue", bg="lightyellow", pady=2)
+        refresh_label.pack(fill="x", padx=10, pady=(5, 0))
+        refresh_label.pack_forget()  # Hide initially
+        
+        # Store refresh label for later access
+        if not hasattr(self, 'refresh_labels'):
+            self.refresh_labels = []
+        self.refresh_labels.append(refresh_label)
         
         # URL Input
         ttk.Label(frame, text="Product URL:").pack(anchor="w", padx=10, pady=(10, 0))
@@ -254,7 +266,38 @@ class StockMonitor:
                 except:
                     pass
             
-    def send_email_alert(self, tab_index, url):
+    def update_tab_color(self, tab_index, color):
+        """Update the tab background color"""
+        try:
+            # Create a custom style for this tab
+            style = ttk.Style()
+            style_name = f"Monitor{tab_index}.TLabel"
+            
+            if color == "green":
+                style.configure(style_name, background="green", foreground="white")
+            elif color == "red":
+                style.configure(style_name, background="red", foreground="white")
+            elif color == "orange":
+                style.configure(style_name, background="orange", foreground="white")
+            else:  # default/gray
+                style.configure(style_name, background="SystemButtonFace", foreground="black")
+            
+            # Note: ttk.Notebook tabs don't support direct color changes easily
+            # We'll use the text prefix with unicode characters instead for better visibility
+        except:
+            pass
+    
+    def show_refresh_indicator(self, tab_index, show=True):
+        """Show or hide the refresh indicator"""
+        try:
+            if show:
+                self.refresh_labels[tab_index].config(text="🔄 Refreshing...")
+                self.refresh_labels[tab_index].pack(fill="x", padx=10, pady=(5, 0))
+            else:
+                self.refresh_labels[tab_index].config(text="")
+                self.refresh_labels[tab_index].pack_forget()
+        except:
+            pass
         """Send email alert when product comes in stock"""
         try:
             # Check if we should send email based on interval
@@ -300,13 +343,20 @@ class StockMonitor:
         interval = int(self.interval_entries[tab_index].get())
         
         while self.monitoring_threads.get(tab_index, {}).get('running', False):
+            # Show refresh indicator
+            self.show_refresh_indicator(tab_index, True)
+            
             status = self.check_stock(url)
+            
+            # Hide refresh indicator
+            self.show_refresh_indicator(tab_index, False)
             
             # Update UI
             if status == 'in_stock':
                 self.status_labels[tab_index].config(text="IN STOCK - Add to Cart Available!", 
                                                      bg="green", fg="white")
-                self.notebook.tab(tab_index, text=f"✓ Monitor {tab_index + 1}")
+                # Update tab with green indicator
+                self.notebook.tab(tab_index, text=f"🟢 Monitor {tab_index + 1}")
                 
                 # Send email if status changed
                 if self.last_status.get(tab_index) != 'in_stock':
@@ -315,10 +365,13 @@ class StockMonitor:
             elif status == 'out_of_stock':
                 self.status_labels[tab_index].config(text="OUT OF STOCK - Add to Wishlist Only", 
                                                      bg="red", fg="white")
-                self.notebook.tab(tab_index, text=f"✗ Monitor {tab_index + 1}")
+                # Update tab with red indicator
+                self.notebook.tab(tab_index, text=f"🔴 Monitor {tab_index + 1}")
             else:
                 self.status_labels[tab_index].config(text=f"Status: {status}", 
                                                      bg="orange", fg="white")
+                # Update tab with orange indicator for errors/unknown
+                self.notebook.tab(tab_index, text=f"🟠 Monitor {tab_index + 1}")
                                                      
             self.last_status[tab_index] = status
             
