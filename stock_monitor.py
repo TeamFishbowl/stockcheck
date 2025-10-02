@@ -218,6 +218,7 @@ class StockMonitor:
             
             # Also try to find buttons/elements
             has_add_to_cart = False
+            has_add_to_bag = False
             has_add_to_wishlist = False
             
             try:
@@ -225,6 +226,14 @@ class StockMonitor:
                 elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to cart')]")
                 if elements:
                     has_add_to_cart = True
+            except:
+                pass
+            
+            try:
+                # Search for elements containing "add to bag"
+                elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to bag')]")
+                if elements:
+                    has_add_to_bag = True
             except:
                 pass
             
@@ -237,12 +246,13 @@ class StockMonitor:
                 pass
             
             # Fallback to page source search
-            if not has_add_to_cart and not has_add_to_wishlist:
+            if not has_add_to_cart and not has_add_to_bag and not has_add_to_wishlist:
                 has_add_to_cart = 'add to cart' in page_source
+                has_add_to_bag = 'add to bag' in page_source
                 has_add_to_wishlist = 'add to wishlist' in page_source
             
-            # Determine stock status (prioritize "add to cart")
-            if has_add_to_cart:
+            # Determine stock status (prioritize "add to cart" or "add to bag")
+            if has_add_to_cart or has_add_to_bag:
                 return 'in_stock'
             elif has_add_to_wishlist:
                 return 'out_of_stock'
@@ -302,6 +312,8 @@ class StockMonitor:
         
         # Schedule the update on the main thread
         self.root.after(0, update)
+    
+    def send_email_alert(self, tab_index, url):
         """Send email alert when product comes in stock"""
         try:
             # Check if we should send email based on interval
@@ -359,7 +371,7 @@ class StockMonitor:
             def update_ui():
                 try:
                     if status == 'in_stock':
-                        self.status_labels[tab_index].config(text="IN STOCK - Add to Cart Available!", 
+                        self.status_labels[tab_index].config(text="IN STOCK - Add to Cart/Bag Available!", 
                                                              bg="green", fg="white")
                         # Update tab with green indicator - using text symbols instead of emoji
                         self.notebook.tab(tab_index, text=f"✓ [IN STOCK] Monitor {tab_index + 1}")
