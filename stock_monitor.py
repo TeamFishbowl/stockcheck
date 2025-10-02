@@ -242,18 +242,29 @@ class StockMonitor:
             try:
                 # Search for "add to basket" button and check if it has BLACK background
                 basket_elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to basket')]")
+                print(f"DEBUG: Found {len(basket_elements)} 'add to basket' elements")
+                
                 if basket_elements:
                     # Check if the button is enabled (clickable) AND has black background
-                    for element in basket_elements:
+                    for idx, element in enumerate(basket_elements):
+                        print(f"DEBUG: Checking element {idx + 1}")
+                        print(f"  - is_enabled: {element.is_enabled()}")
+                        print(f"  - is_displayed: {element.is_displayed()}")
+                        
                         if element.is_enabled() and element.is_displayed():
                             # Additional check: verify it's not disabled via attribute
                             disabled_attr = element.get_attribute('disabled')
                             aria_disabled = element.get_attribute('aria-disabled')
                             
+                            print(f"  - disabled attribute: {disabled_attr}")
+                            print(f"  - aria-disabled: {aria_disabled}")
+                            
                             if disabled_attr is None and aria_disabled != 'true':
                                 # Check background color - must be black for in stock
                                 try:
                                     bg_color = element.value_of_css_property('background-color')
+                                    print(f"  - Background color: {bg_color}")
+                                    
                                     # Convert to lowercase for comparison
                                     bg_color_lower = bg_color.lower()
                                     
@@ -266,18 +277,25 @@ class StockMonitor:
                                         rgb_values = re.findall(r'\d+', bg_color_lower)
                                         if len(rgb_values) >= 3:
                                             r, g, b = int(rgb_values[0]), int(rgb_values[1]), int(rgb_values[2])
+                                            print(f"  - RGB values: R={r}, G={g}, B={b}")
                                             # Consider it black if all RGB values are below 50 (dark enough)
                                             if r < 50 and g < 50 and b < 50:
                                                 is_black = True
+                                                print(f"  - Is black: YES - Marking as IN STOCK")
+                                            else:
+                                                print(f"  - Is black: NO - Button is not black (likely grey/disabled)")
                                     
                                     if is_black:
                                         has_add_to_basket_enabled = True
                                         break
-                                except:
-                                    # If we can't get color, fall back to old behavior
-                                    has_add_to_basket_enabled = True
-                                    break
-            except:
+                                    else:
+                                        print(f"  - Skipping this button - background is not black")
+                                except Exception as color_error:
+                                    print(f"  - Error getting color: {color_error}")
+                                    # If we can't get color, DO NOT fall back - be strict
+                                    print(f"  - Cannot verify color, skipping this element")
+            except Exception as e:
+                print(f"DEBUG: Error in basket check: {e}")
                 pass
             
             try:
