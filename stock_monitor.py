@@ -219,6 +219,7 @@ class StockMonitor:
             # Also try to find buttons/elements
             has_add_to_cart = False
             has_add_to_bag = False
+            has_add_to_basket_enabled = False
             has_add_to_wishlist = False
             
             try:
@@ -238,6 +239,23 @@ class StockMonitor:
                 pass
             
             try:
+                # Search for "add to basket" button and check if it's enabled/clickable
+                basket_elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to basket')]")
+                if basket_elements:
+                    # Check if the button is enabled (clickable)
+                    for element in basket_elements:
+                        if element.is_enabled() and element.is_displayed():
+                            # Additional check: verify it's not disabled via attribute
+                            disabled_attr = element.get_attribute('disabled')
+                            aria_disabled = element.get_attribute('aria-disabled')
+                            
+                            if disabled_attr is None and aria_disabled != 'true':
+                                has_add_to_basket_enabled = True
+                                break
+            except:
+                pass
+            
+            try:
                 # Search for elements containing "add to wishlist"
                 elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to wishlist')]")
                 if elements:
@@ -245,14 +263,14 @@ class StockMonitor:
             except:
                 pass
             
-            # Fallback to page source search
-            if not has_add_to_cart and not has_add_to_bag and not has_add_to_wishlist:
+            # Fallback to page source search (only for cart and bag, not basket)
+            if not has_add_to_cart and not has_add_to_bag and not has_add_to_basket_enabled and not has_add_to_wishlist:
                 has_add_to_cart = 'add to cart' in page_source
                 has_add_to_bag = 'add to bag' in page_source
                 has_add_to_wishlist = 'add to wishlist' in page_source
             
-            # Determine stock status (prioritize "add to cart" or "add to bag")
-            if has_add_to_cart or has_add_to_bag:
+            # Determine stock status (prioritize "add to cart", "add to bag", or enabled "add to basket")
+            if has_add_to_cart or has_add_to_bag or has_add_to_basket_enabled:
                 return 'in_stock'
             elif has_add_to_wishlist:
                 return 'out_of_stock'
@@ -371,7 +389,7 @@ class StockMonitor:
             def update_ui():
                 try:
                     if status == 'in_stock':
-                        self.status_labels[tab_index].config(text="IN STOCK - Add to Cart/Bag Available!", 
+                        self.status_labels[tab_index].config(text="IN STOCK - Add to Cart/Bag/Basket Available!", 
                                                              bg="green", fg="white")
                         # Update tab with green indicator - using text symbols instead of emoji
                         self.notebook.tab(tab_index, text=f"✓ [IN STOCK] Monitor {tab_index + 1}")
