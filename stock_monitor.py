@@ -8,6 +8,7 @@ from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from datetime import datetime
 import os
+import re
 from selenium import webdriver
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
@@ -239,10 +240,10 @@ class StockMonitor:
                 pass
             
             try:
-                # Search for "add to basket" button and check if it's enabled/clickable
+                # Search for "add to basket" button and check if it has BLACK background
                 basket_elements = driver.find_elements(By.XPATH, "//*[contains(translate(text(), 'ABCDEFGHIJKLMNOPQRSTUVWXYZ', 'abcdefghijklmnopqrstuvwxyz'), 'add to basket')]")
                 if basket_elements:
-                    # Check if the button is enabled (clickable)
+                    # Check if the button is enabled (clickable) AND has black background
                     for element in basket_elements:
                         if element.is_enabled() and element.is_displayed():
                             # Additional check: verify it's not disabled via attribute
@@ -250,8 +251,32 @@ class StockMonitor:
                             aria_disabled = element.get_attribute('aria-disabled')
                             
                             if disabled_attr is None and aria_disabled != 'true':
-                                has_add_to_basket_enabled = True
-                                break
+                                # Check background color - must be black for in stock
+                                try:
+                                    bg_color = element.value_of_css_property('background-color')
+                                    # Convert to lowercase for comparison
+                                    bg_color_lower = bg_color.lower()
+                                    
+                                    # Check if background is black or very dark
+                                    # Black can be: rgb(0, 0, 0), rgba(0, 0, 0, 1), or very dark greys
+                                    is_black = False
+                                    
+                                    if 'rgb' in bg_color_lower:
+                                        # Extract RGB values
+                                        rgb_values = re.findall(r'\d+', bg_color_lower)
+                                        if len(rgb_values) >= 3:
+                                            r, g, b = int(rgb_values[0]), int(rgb_values[1]), int(rgb_values[2])
+                                            # Consider it black if all RGB values are below 50 (dark enough)
+                                            if r < 50 and g < 50 and b < 50:
+                                                is_black = True
+                                    
+                                    if is_black:
+                                        has_add_to_basket_enabled = True
+                                        break
+                                except:
+                                    # If we can't get color, fall back to old behavior
+                                    has_add_to_basket_enabled = True
+                                    break
             except:
                 pass
             
